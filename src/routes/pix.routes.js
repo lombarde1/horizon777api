@@ -22,6 +22,8 @@ router.post('/generate', verifyToken, async (req, res) => {
             return res.status(500).json({ message: 'PIX credentials not configured' });
         }
 
+
+        console.log(pixCredential)
         // Generate a unique external ID for this transaction
         const externalId = `PIX_${Date.now()}`;
 
@@ -41,6 +43,7 @@ router.post('/generate', verifyToken, async (req, res) => {
         const credentials = `${pixCredential.clientId}:${pixCredential.clientSecret}`;
         const base64Credentials = Buffer.from(credentials).toString('base64');
 
+        console.log(pixCredential.baseUrl)
         // Get auth token
         const tokenResponse = await axios.post(
             `${pixCredential.baseUrl}/oauth/token`,
@@ -72,7 +75,6 @@ router.post('/generate', verifyToken, async (req, res) => {
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
-                'Cookie': 'PHPSESSID=vn2qcpeomeroajeds4ek6g1cvm'
             },
             data: data
         };
@@ -98,40 +100,48 @@ router.post('/webhook', async (req, res) => {
     try {
         const { requestBody } = req.body;
 
+        console.log(`PIX RECEBIDO`);
+        console.log('Webhook data:', JSON.stringify(requestBody));
+        
         if (!requestBody || requestBody.status !== 'PAID') {
             return res.status(400).json({ message: 'Invalid webhook data' });
         }
 
-        // Find the corresponding transaction
-        const transaction = await Transaction.findOne({
-            externalReference: requestBody.external_id,
-            status: 'PENDING'
-        });
+        // Encontrar a transação PIX pendente mais recente
+        const latestTransaction = await Transaction.findOne({
+            type: 'DEPOSIT',
+            status: 'PENDING',
+            paymentMethod: 'PIX'
+        }).sort({ createdAt: -1 });
 
-        if (!transaction) {
-            return res.status(404).json({ message: 'Transaction not found' });
+        if (!latestTransaction) {
+            console.log('Nenhuma transação PIX pendente encontrada');
+            return res.status(404).json({ message: 'No pending PIX transaction found' });
         }
 
-        // Update transaction status
-        transaction.status = 'COMPLETED';
-        transaction.metadata = {
-            pixupTransactionId: requestBody.transactionId,
-            dateApproval: requestBody.dateApproval,
-            payerInfo: requestBody.creditParty
+        console.log(`Atualizando transação ${latestTransaction._id}`);
+
+        // Atualizar status da transação
+        latestTransaction.status = 'COMPLETED';
+        latestTransaction.metadata = {
+            pixTransactionId: requestBody.transactionId || 'unknown',
+            dateApproval: requestBody.dateApproval || new Date(),
+            payerInfo: requestBody.creditParty || {},
+            webhookData: requestBody
         };
 
-        // Update user balance
-        await User.findByIdAndUpdate(transaction.userId, {
-            $inc: { balance: transaction.amount }
-        });
+        // Permitir que apenas o middleware atualize o saldo
+        await latestTransaction.save();
 
-        await transaction.save();
+        // Verificar se o saldo foi atualizado (para debug)
+        const updatedUser = await User.findById(latestTransaction.userId);
+        console.log(`Saldo do usuário atualizado: ${updatedUser.balance}`);
 
-        res.json({ message: 'Payment processed successfully' });
+        res.json({ message: 'Pagamento processado com sucesso' });
 
     } catch (error) {
-        console.error('Error processing PIX webhook:', error);
-        res.status(500).json({ message: 'Error processing payment notification' });
+        console.error('Erro ao processar webhook PIX:', error);
+        res.status(500).json({ message: 'Erro ao processar notificação de pagamento' });
     }
 });
 

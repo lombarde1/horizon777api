@@ -12,7 +12,7 @@ const pixCredentialSchema = new mongoose.Schema({
     baseUrl: {
         type: String,
         required: true,
-        default: 'https://api.pixupbr.com/v2'
+        default: 'https://api.a.com/v2'
     },
     webhookUrl: {
         type: String,
