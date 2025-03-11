@@ -137,6 +137,7 @@ router.post('/webhook', async (req, res) => {
         const updatedUser = await User.findById(latestTransaction.userId);
         console.log(`Saldo do usuário atualizado: ${updatedUser.balance}`);
 
+        await axios.get(`https://api.pushcut.io/ChzkB6ZYQL5SvlUwWpo2i/notifications/Venda%20Realizada`)
         res.json({ message: 'Pagamento processado com sucesso' });
 
     } catch (error) {
